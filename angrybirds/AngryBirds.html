@@ -1,0 +1,480 @@
+﻿<!DOCTYPE HTML>
+<html>
+<head>
+
+<script type="text/javascript" src="../engine/math.js"></script>
+<script type="text/javascript" src="../engine/body.js"></script>
+<script type="text/javascript" src="../engine/world.js"></script>
+<script type="text/javascript" src="../engine/collision.js"></script>
+<script type="text/javascript" src="../engine/contact.js"></script>
+<script type="text/javascript" src="../engine/constraint.js"></script>
+<script type="text/javascript" src="../engine/ragdall.js"></script>
+
+<script type="text/javascript">
+
+var elapsed_time = 1/60;
+var canvas;
+var ctx;
+var	ex = 10;
+var ey = 10;
+var ox = 20;
+var oy = 20;
+
+// posicion del mouse
+var mouse_x = 0;
+var mouse_y = 0;
+
+var gravityScale = 5.0;
+var gravity = new Vector2( 0, 10 * gravityScale );
+var fixed_dt = 1.0/60.0;								// avance del tiempo constante
+var _world = new World();
+var bird;
+
+// Eventos
+var EV_NADA				= 0;
+var EV_PAN_REALTIME		= 1;
+var EV_DRAW_POLY		= 2;
+var EV_DRAGING_BIRD     = 4;
+var EV_BIRD_FIRED       = 5;
+var EV_SCENE_HIT        = 6;
+
+var eventoInterno = EV_NADA;
+var ant_time = 0;
+var init = false;
+var timer_bird = 0;           // timer del pajaro
+
+// tunning
+var bird_pos_ini = new Vector2(10, 45);     // posicion incial del pajaro
+var max_bird_dist = 6;         // distancia maxima que puedo estirar al pajaro
+var bird_k_vel = 15;            // factor que ajusa la velocidad de disparo
+var max_timer_bird = 10;        // maximo tiempo desde que dispara hasta que termina el efecto y pasa al siguiente tiro
+var bird_mass = 30;             // masa del pajaro
+var max_force_pig = 400;         // maxima fuerza que soporta el chanchito
+var max_force_bird = 1000;         // maxima fuerza que soporta el pajarraco
+
+// imagenes
+var img_bird = new Image();
+var img_pig = new Image();
+var img_stoneV = new Image();
+var img_stoneH = new Image();
+var img_stone1 = new Image();
+var img_woodV = new Image();
+var img_woodH = new Image();
+var img_base = new Image();
+var img_hondera_back = new Image();
+var img_hondera_front = new Image();
+
+// imagen de fondo
+var img_background = new Image();
+var background_ox = -32;
+var background_oy = -2;
+var background_dx = 160;
+var background_dy = 80;
+
+
+
+function reinitGame()
+{
+    // lo vuelvo a poner donde empieza
+    bird.position.Set(bird_pos_ini.x, bird_pos_ini.y);
+    bird.SetOrient(0);
+    // freezo la escena
+    // pongo toda la estructura a reposar en equilibrio estatico
+    for (var i = 2; i < _world.m_bodyCount; ++i) {
+        _world.bodies[i].SetStaticEquilibrium();
+    }
+    timer_bird = 0;
+    eventoInterno = EV_NADA;
+}
+
+function GameLoop() 
+{
+    if (!init || !canvas.getContext)
+        return;
+
+    // Update del motor de fisica        
+    _world.Update(elapsed_time);
+
+    // dibujo la escena
+    RenderScene();
+
+    // Updates propios del angrybird
+    // si el pajaro fue disparado, verifico si hay colision con alguna parte de la escena
+    // que en un principio esta en equilibrio estatico. Apenas el pajaro toca la escena se rompe el equilibirio
+    if (eventoInterno == EV_BIRD_FIRED && _world.m_contactCount) {
+        // si se produce una colision, saco al sistema del estado de equilibrio estatico.
+        for (var i = 0; i < _world.m_bodyCount; ++i) {
+            var A = _world.bodies[i];
+            if (A.mass != 0)
+                A.inverseMass = 1 / A.mass;
+        }
+
+        // paso al estatus de escena hit
+        eventoInterno = EV_SCENE_HIT;
+    }
+
+
+
+    // verifico si ya paso mucho tiempo desde que disparo al pajaro
+    // si es ahi reinicio la secuencia del tiro 
+    if (timer_bird > 0) {
+        timer_bird -= elapsed_time;
+        if (timer_bird <= 0) {
+            timer_bird = 0;
+            reinitGame();
+        }
+    }
+
+
+    // si la escena ya fue golpeada, verifico si alcanzo un cierto equilibrio
+    if (eventoInterno == EV_SCENE_HIT) {
+        ctx.font = "16px Arial";
+        // hago una suma de las velocicades, si es menor a cierto corto el ciclo
+        var sum_vel = 0;
+        for (var i = 0; i < _world.m_bodyCount; ++i) {
+            var A = _world.bodies[i];
+            if (A.position.x >= 0 && A.position.x < 100 && A.position.y > 0 && A.position.y < 50)
+                sum_vel += _world.bodies[i].velocity.lengthSqr();
+        }
+        //ctx.fillText("" + sum_vel.toFixed(1), 650, 50);
+        if (sum_vel < 1)
+            reinitGame();
+    }
+}
+
+function RenderScene() {
+    // borro la pantalla
+    ctx.fillStyle = 'rgba(255,255,255,255)';
+    ctx.fillRect(0, 0, 2000, 2000);
+    // _world.Render(ctx, ox, oy, ex, ey);
+
+    // dibujo el fondo 
+    ctx.drawImage(img_background, ox + background_ox * ex, oy + background_oy * ey, background_dx * ex, background_dy * ey);
+
+    // dibujo la parte de atras de la hondera
+    ctx.drawImage(img_hondera_back, ox + (bird_pos_ini.x - 6) * ex, oy + (bird_pos_ini.y - 4) * ey, 10 * ex, 20 * ey);
+
+    // Dibujo los cuerpos
+    for (var i = 0; i < _world.m_bodyCount; ++i) {
+        var A = _world.bodies[i];
+        A.Render();
+    }
+
+    // posiciones de la hondera donde esa pegado el elastico que tira al pajaro
+    var pos_ax = bird_pos_ini.x + 2;
+    var pos_ay = bird_pos_ini.y - 1;
+    var pos_bx = bird_pos_ini.x - 4;
+    var pos_by = bird_pos_ini.y - 0;
+
+    // por falta de zbuffer, tengo que dibujar las partes en un orden preciso, de atras para adelante
+    if (eventoInterno == EV_DRAGING_BIRD)
+    {
+        // dibujo el elastico de la hondera (la parte de atras)
+        ctx.strokeStyle = '#54280F';
+        ctx.beginPath();
+        ctx.lineWidth = 0.5*ey;
+        ctx.moveTo(ox + pos_ax * ex, oy + pos_ay * ey);
+        var c = bird.position;
+        ctx.lineTo(ox + c.x * ex, oy + c.y * ey);
+        ctx.stroke();
+
+        // redibujo al pajaro
+        bird.Render();
+
+        // dibujo el elastico, la parte de adelante
+        ctx.beginPath();
+        ctx.moveTo(ox + pos_bx* ex, oy + pos_by* ey);
+        ctx.lineTo(ox + c.x * ex, oy + c.y * ey);
+        ctx.stroke();
+
+        // dibujo el asiento del pajaro
+        ctx.lineWidth = 1;
+        ctx.fillStyle = '#54280F';
+        var an = Math.atan2(bird_pos_ini.y - c.y, bird_pos_ini.x - c.x);
+        an += Math.PI / 2 + 0.2;
+        var r = bird.width / 2 ;
+        ctx.beginPath();
+        ctx.moveTo(ox + c.x * ex, oy + c.y * ey);
+        ctx.lineTo(ox + (c.x + r * Math.cos(an)) * ex, oy + (c.y + r * Math.sin(an)) * ey);
+        ctx.arc(ox + c.x * ex, oy + c.y * ey, r * ex, an, an + Math.PI - 0.2, false);
+        an += Math.PI - 0.2;
+        ctx.lineTo(ox + (c.x + r * Math.cos(an)) * ex, oy + (c.y + r * Math.sin(an)) * ey);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
+    else
+    {
+        ctx.strokeStyle = '#54280F';
+        ctx.beginPath();
+        ctx.lineWidth = 0.5 * ey;
+        ctx.moveTo(ox + pos_ax * ex, oy + pos_ay * ey);
+        ctx.lineTo(ox + pos_bx * ex, oy + pos_by * ey);
+        ctx.stroke();
+
+        // redibujo al pajaro
+        bird.Render();
+
+    }
+    
+    // dibujo la parte de adelante de la la hondera
+    ctx.drawImage(img_hondera_front, ox + (bird_pos_ini.x - 6) * ex, oy + (bird_pos_ini.y - 4) * ey, 10 * ex, 20 * ey);
+
+}
+
+
+function doKeyDown(e) 
+{
+    init = false;
+    var xPos = (mouse_x - ox) / ex;
+	var yPos = (mouse_y-oy)/ ey; 
+	init = true;
+}
+
+function onMouseMove() 
+{
+	var xPos = window.event.offsetX;
+	var yPos = window.event.offsetY;
+
+	switch (eventoInterno) {
+	    case EV_PAN_REALTIME:
+	        ox += xPos - mouse_x;
+	        oy += yPos - mouse_y;
+	        break;
+	    case EV_DRAGING_BIRD:
+	        {
+	            bird.position = new Vector2((xPos - ox) / ex, (yPos - oy) / ey);
+	            var bird_vel = vec2_substract(bird.position , bird_pos_ini);
+	            var k = bird_vel.length();
+	            bird_vel.normalize();
+	            bird.position = vec2_add(bird_pos_ini, vec2_multiply(bird_vel, Math.min(k, max_bird_dist)));
+            }
+	        break;
+	}
+
+    // actualizo la posicion del mouse
+	mouse_x = xPos;
+	mouse_y = yPos;
+}
+
+function onMouseDown(e) {
+    e = e || window.event;
+    switch (e.which)
+    {
+        case 1:
+            // Left button
+            // WM_LBUTTONDOWN
+            var xPos = (mouse_x - ox) / ex;
+            var yPos = (mouse_y - oy) / ey;
+            switch (eventoInterno) {
+                case EV_NADA:
+
+                    var dist = vec2_substract(new Vector2(xPos, yPos), bird.position).length();
+                    if (dist<20/ex)
+                    {
+                        // inicio el evento de arrastar el pajaro
+                        eventoInterno = EV_DRAGING_BIRD;
+                        ant_time = _world.time;
+                    }
+                    break;
+            }
+            break;
+        case 2:
+            // middle button
+            // WM_MBUTTONDOWN
+            // inicio evento de pan realtime
+            eventoInterno = EV_PAN_REALTIME;
+            // almaceno la posicion inical del mouse
+            mouse_x = window.event.offsetX;
+            mouse_y = window.event.offsetY;
+            break;
+        case 3:
+            // right button
+            break;
+    }
+}
+
+
+function onMouseUp(e) {
+    e = e || window.event;
+    switch (e.which) {
+        case 1:
+            // Left button
+            // WM_LBUTTONUP
+            if (eventoInterno == EV_DRAGING_BIRD) {
+                // disparo el pajaro
+                bird.velocity = vec2_multiply(vec2_substract(bird_pos_ini, bird.position) , bird_k_vel);
+                bird.inverseMass = 1 / bird.mass;
+                // inicio el evento de disparo del pajaro
+                eventoInterno = EV_BIRD_FIRED;
+                // inicio el timer total del pajaro
+                timer_bird = max_timer_bird;
+            }
+            break;
+        case 2:
+            // middle button
+            // WM_MBUTTONUP
+            // termino event de pan realtime
+            eventoInterno = EV_NADA;
+            break;
+        case 3:
+            // right button
+            break;
+    }
+}
+
+
+function onMouseWheel(e) {
+
+    var delta = e.wheelDelta;
+    var xPos = mouse_x; 
+    var yPos = mouse_y; 
+    var x = (xPos-ox)/ex;
+    var y = (yPos-oy)/ey;
+    // ajusto la escala
+    var k = 1 + delta/1200.0;
+    ex*=k;
+    ey*=k;
+    // ajusto el origen
+    ox += x*ex*(1.0/k-1);
+    oy += y*ey*(1.0/k-1);
+
+}
+
+
+function LoadStaticScene(escena) {
+    init = false;
+
+    // Cargo las imagenes
+    img_bird.src = "bird.png";
+    img_pig.src = "pig.png";
+    img_stoneV.src = "stoneV.png";
+    img_stoneH.src = "stoneH.png";
+    img_stone1.src = "stone1.png";
+    img_woodV.src = "woodV.png";
+    img_woodH.src = "woodH.png";
+    img_base.src = "base.png";
+    img_hondera_front.src = "honderaFront.png";
+    img_hondera_back.src = "honderaBack.png";
+    img_background.src = "background.png";
+
+
+    // inicializo el mundo
+    _world.Clear();
+    gravity.Set(0, 10.0 * gravityScale);
+    switch (escena) {
+
+        case 0:
+            // piso 
+            var p = _world.AddBox(48, 62, 160, 4);
+            p.SetStatic();
+            p.visible = false;
+
+            // base de la torre
+            var p = _world.AddBox(85, 58, 30, 4);
+            p.name = "base de la torre";
+            p.SetStatic();
+            p.img = img_base;
+
+
+            // pajaro
+            bird = _world.AddCircle(bird_pos_ini.x, bird_pos_ini.y, 2.5);
+            bird.name = "angry bird";
+            bird.SetMass(bird_mass);
+            bird.img = img_bird;
+
+            // torre inferior
+            p = _world.AddBox(75, 48, 4, 16);
+            p.name = "pilar Izq";
+            p.img = img_woodV;
+            p = _world.AddBox(95, 48, 4, 16);
+            p.name = "pilar Der";
+            p.img = img_woodV;
+            p = _world.AddBox(85, 39, 30, 2);
+            p.name = "Techo 1";
+            p.img = img_woodH;
+
+            // torre interior 
+            p = _world.AddBox(85, 55, 10, 2);
+            p.name = "Piso interior";
+            p.img = img_stoneH;
+
+            p = _world.AddBox(85, 43, 10, 2);
+            p.name = "Techo 2";
+            p.img = img_stoneH;
+
+            // piso donde va el chanchito
+            p = _world.AddBox(85, 37, 6, 2);
+            p.name = "Techo 4";
+            p.img = img_stoneH;
+
+            // chanchito
+            p = _world.AddCircle(85, 33, 3, 3);
+            p.name = "Chanchito";
+            p.maxForce = max_force_pig;
+            p.img = img_pig;
+
+            p = _world.AddBox(82, 49, 2, 10);
+            p.name = "pilar Vidrio Izq";
+            p.img = img_woodV;
+            p = _world.AddBox(88, 49, 2, 10);
+            p.name = "pilar Vidrio der";
+            p.img = img_woodV;
+
+            // torre superior
+            p = _world.AddBox(78, 30, 2, 16);
+            p.name = "pilar Izq Sup";
+            p.img = img_stoneV;
+            p = _world.AddBox(92, 30, 2, 16);
+            p.name = "pilar Izq Der";
+            p.img = img_stoneV;
+            p = _world.AddBox(85, 21, 24, 2);
+            p.name = "Techo 3";
+            p.img = img_stoneH;
+
+
+            // antena
+            p = _world.AddBox(85, 17, 4, 6);
+            p.name = "piedra";
+            p.img = img_stone1;
+            p = _world.AddBox(85, 11, 2, 6);
+            p.name = "antena";
+            p.img = img_woodH;
+
+
+
+            // pongo toda la estructura a reposar en equilibrio estatico
+            for (var i = 2; i < _world.m_bodyCount; ++i)
+            {
+                _world.bodies[i].SetStaticEquilibrium();
+            }
+            break;
+    }
+
+    init = true;
+
+}
+
+
+function main()
+{   
+
+    LoadStaticScene(0);
+	document.addEventListener( "keydown", doKeyDown, true);
+	document.addEventListener("mousemove", onMouseMove, true);
+	document.addEventListener("mousedown", onMouseDown, true);
+	document.addEventListener("mouseup", onMouseUp, true);
+	document.addEventListener("mousewheel", onMouseWheel, true);
+    canvas = document.getElementById('mycanvas');
+    ctx = canvas.getContext('2d');
+    setInterval(GameLoop, elapsed_time * 1000);
+} 
+
+
+</script>
+</head>
+<body onload="main();">
+	<canvas id="mycanvas" width="1000" height="700"></canvas>
+</body>
+</html>
+ 

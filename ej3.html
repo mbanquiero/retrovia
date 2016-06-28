@@ -1,0 +1,190 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+
+<script type="text/javascript" src="engine/math.js"></script>
+<script type="text/javascript" src="engine/body.js"></script>
+<script type="text/javascript" src="engine/world.js"></script>
+<script type="text/javascript" src="engine/collision.js"></script>
+<script type="text/javascript" src="engine/contact.js"></script>
+<script type="text/javascript" src="engine/constraint.js"></script>
+
+<script type="text/javascript">
+
+var elapsed_time = 1/60;
+var canvas;
+var ctx;
+var	ex = 10;
+var ey = 10;
+var ox = 20;
+var oy = 20;
+
+// pos y tamaño de pantalla
+var OX = 1;
+var OY = 1;
+var DX = 90;
+var DY = 50;
+
+// posicion del mouse
+var mouse_x = 0;
+var mouse_y = 0;
+
+var gravity = new Vector2( 0, 40 );
+var fixed_dt = 1.0/60.0;								// avance del tiempo constante
+var _world = new World();
+var init = false;
+var canion = null;
+var potencia = 100;
+
+function Update() 
+{
+    _world.Update(elapsed_time);
+}
+
+function Render() 
+{
+    if (canvas.getContext)
+    {
+        // borro la pantalla
+        ctx.fillStyle = 'rgba(0,0,0,255)';
+        ctx.fillRect(0,0,2000,2000);
+		// dibujo la escena esquematica con el motor 
+	    _world.Render(ctx);
+		
+		ctx.font = "16px Arial";
+		ctx.fillText("potencia = "+ potencia.toFixed(0) , 10, 20);
+		
+    }
+}
+
+
+function RenderLoop() 
+{
+    if (!init)
+		return;
+	Update();
+	Render();
+}
+
+
+function doKeyDown(e) 
+{
+    e = e || window.event;
+	var xPos = (mouse_x-ox)/ ex; 
+	var yPos = (mouse_y-oy)/ ey; 
+	
+	if(e.keyCode==32)
+	{
+		// espacio: dispara un pajaro
+		// el pajaro sale desde la punta del cañon
+		var x = canion.position.x + Math.cos(canion.orient)*10;
+		var y = canion.position.y + Math.sin(canion.orient)*10;
+		var p = _world.AddCircle(x,y,2);
+		// y su velocidad depende de la potencia 
+		var k = potencia/100 * 30;
+		p.velocity.x = Math.cos(canion.orient)* k;
+		p.velocity.y = Math.sin(canion.orient)* k;
+	}
+	else
+	if(e.keyCode==40)
+	{
+		// "abajo"
+		canion.SetOrient( canion.orient + 0.05);
+	}
+	else
+	if(e.keyCode==38)
+	{
+		// "arriba"
+		canion.SetOrient( canion.orient - 0.05);
+	}
+	else
+	if(e.keyCode==39)
+	{
+		// "derecha"
+		potencia+=10;
+	}
+	else
+	if(e.keyCode==37)
+	{
+		// "izquierda"
+		potencia-=10;
+	}
+}
+
+function onMouseMove() 
+{
+	var xPos = window.event.offsetX;
+	var yPos = window.event.offsetY;
+    // actualizo la posicion del mouse
+	mouse_x = xPos;
+	mouse_y = yPos;
+}
+
+function onMouseDown(e) {
+    e = e || window.event;
+    switch (e.which)
+    {
+        case 1:
+            // Left button
+            break;
+        case 2:
+            // middle button
+            break;
+        case 3:
+            // right button
+            break;
+    }
+}
+
+
+function onMouseUp(e) 
+{
+    e = e || window.event;
+    switch (e.which) {
+        case 1:
+            // Left button
+            break;
+        case 2:
+            // middle button
+            break;
+        case 3:
+            // right button
+            break;
+    }
+}
+
+function loadscene()
+{
+	
+	// piso
+    var p = _world.AddBox(OX+DX/2,OY+DY,DX,2);
+    p.SetStatic();
+ 
+	// cañon
+	canion = _world.AddBox(OX+5,OY+DY-5,7,2);
+	canion.shape.SetCenterOfMass(new Vector2(-3,0));
+	canion.SetOrient(-1);
+	canion.SetStatic();
+    init = true;
+}
+
+function main()
+{   
+	document.addEventListener( "keydown", doKeyDown, true);
+	document.addEventListener("mousemove", onMouseMove, true);
+	document.addEventListener("mousedown", onMouseDown, true);
+	document.addEventListener("mouseup", onMouseUp, true);
+    canvas = document.getElementById('mycanvas');
+    ctx = canvas.getContext('2d');
+	loadscene();
+    setInterval(RenderLoop, elapsed_time * 1000);
+} 
+
+
+</script>
+</head>
+<body onload="main();">
+	<canvas id="mycanvas" width="900" height="600"></canvas>
+</body>
+</html>
+ 

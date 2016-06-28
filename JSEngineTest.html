@@ -1,0 +1,454 @@
+﻿<!DOCTYPE HTML>
+<html>
+<head>
+
+<script type="text/javascript" src="engine/math.js"></script>
+<script type="text/javascript" src="engine/body.js"></script>
+<script type="text/javascript" src="engine/world.js"></script>
+<script type="text/javascript" src="engine/collision.js"></script>
+<script type="text/javascript" src="engine/contact.js"></script>
+<script type="text/javascript" src="engine/constraint.js"></script>
+<script type="text/javascript" src="engine/ragdoll.js"></script>
+
+<script type="text/javascript">
+
+var elapsed_time = 1/60;
+var canvas;
+var ctx;
+var	ex = 10;
+var ey = 10;
+var ox = 20;
+var oy = 20;
+
+// posicion del mouse
+var mouse_x = 0;
+var mouse_y = 0;
+
+var gravityScale = 5.0;
+var gravity = new Vector2( 0, 10 * gravityScale );
+var fixed_dt = 1.0/60.0;								// avance del tiempo constante
+var _world = new World();
+
+// Eventos
+var EV_NADA				= 0;
+var EV_PAN_REALTIME		= 1;
+var EV_DRAW_POLY		= 2;
+var EV_DRAGING_BODY = 3;
+var eventoInterno = EV_NADA;
+var ant_time = 0;
+var init = false;
+
+
+
+
+function Render() 
+{
+    if (canvas.getContext)
+    {
+        // borro la pantalla
+        ctx.fillStyle = 'rgba(0,0,0,255)';
+        ctx.fillRect(0,0,2000,2000);
+	    _world.Update(elapsed_time);
+	    _world.Render(ctx,ox,oy,ex,ey);
+    }
+}
+
+
+function RenderLoop() 
+{
+    if (init)
+        Render();
+}
+
+
+function doKeyDown(e) 
+{
+	var xPos = (mouse_x-ox)/ ex; 
+	var yPos = (mouse_y-oy)/ ey; 
+
+	init = false;
+	if(e.keyCode==67)
+	{
+        //  C = circulo
+        var p = _world.AddCircle(xPos,yPos,Random(1,10));
+        p.velocity.y = Random(1, 15);
+        p.color = getRandomColor();
+	}
+    else
+	if(e.keyCode==82)
+	{
+        //  R = rectangulo (box)
+		var p = _world.AddBox(xPos,yPos,Random(1,10),Random(1,10));
+		p.velocity.Set(0, 5);
+		p.color = getRandomColor();
+    }
+    else
+	if(e.keyCode==84)
+	{
+	    //  T = triangulo
+        var r = Random(1,10);
+		var p = _world.AddTri(-r,r,-r,-r, r,2*r);
+		p.position.Set(xPos, yPos);
+		p.velocity.Set(0, 5);
+		p.color = getRandomColor();
+	}
+    else
+	if (e.keyCode == 80)
+	{
+        // P = poligono
+	    var cant_v = parseInt(Random( 3, 15));
+	    var vertices = [];
+	    var dist = Random( 5, 10 );
+	    for (var i = 0; i < cant_v; ++i)
+	        vertices[i] = new Vector2( Random( -dist, dist ), Random( -dist, dist ));
+
+        var p = _world.AddPoly(vertices,cant_v);
+        p.position.Set(xPos, yPos);
+        p.SetOrient(Random(-Math.PI, Math.PI));
+        p.restitution = 0.2;
+        p.dynamicFriction = 0.2;
+        p.staticFriction = 0.4;
+        p.color = getRandomColor();
+	}
+	else
+	if(e.keyCode>=48 && e.keyCode<=57)
+	{
+	    LoadStaticScene(e.keyCode-48);
+	}
+	else
+	if(e.keyCode==66)
+	{
+        // B
+	    RagDollBody(xPos,yPos,1,0);
+	}
+	init = true;
+
+}
+
+function onMouseMove() 
+{
+	var xPos = window.event.offsetX;
+	var yPos = window.event.offsetY;
+
+	switch (eventoInterno) {
+	    case EV_PAN_REALTIME:
+	        ox += xPos - mouse_x;
+	        oy += yPos - mouse_y;
+	        break;
+
+	    case EV_DRAGING_BODY:
+	        if(drag_body!=-1)
+	        {
+	            var ant_pos = _world.bodies[drag_body].position;
+	            _world.bodies[drag_body].position = new Vector2((xPos-ox)/ex, (yPos-oy)/ey);
+	            _world.bodies[drag_body].angularVelocity = 0;
+	            _world.bodies[drag_body].inverseMass = 0;
+	            var dt = _world.time - ant_time;
+	            if(dt)
+	            {
+	                _world.bodies[drag_body].velocity = vec2_multiply(vec2_substract(_world.bodies[drag_body].position , ant_pos)  , 1/dt);
+	            }
+	            ant_time = _world.time;
+	        }
+	        break;
+
+	}
+
+    // actualizo la posicion del mouse
+	mouse_x = xPos;
+	mouse_y = yPos;
+}
+
+function onMouseDown(e) {
+    e = e || window.event;
+    switch (e.which)
+    {
+        case 1:
+            // Left button
+            // WM_LBUTTONDOWN
+            var xPos = (mouse_x - ox) / ex;
+            var yPos = (mouse_y - oy) / ey;
+            switch (eventoInterno) {
+                case EV_NADA:
+                    // verifico si toca contra algun cuerpo
+                    if ((drag_body = _world.PointNearBodyCM(new Vector2(xPos, yPos), 20 / ex)) != -1) {
+                        // inicio un evento de arrastrar cuerpo
+                        eventoInterno = EV_DRAGING_BODY;
+                        ant_time = _world.time;
+                    }
+                    break;
+            }
+            break;
+        case 2:
+            // middle button
+            // WM_MBUTTONDOWN
+            // inicio evento de pan realtime
+            eventoInterno = EV_PAN_REALTIME;
+            // almaceno la posicion inical del mouse
+            mouse_x = window.event.offsetX;
+            mouse_y = window.event.offsetY;
+            break;
+        case 3:
+            // right button
+            break;
+    }
+}
+
+
+function onMouseUp(e) {
+    e = e || window.event;
+    switch (e.which) {
+        case 1:
+            // Left button
+            // WM_LBUTTONUP
+            // termino event de draggin
+            if(eventoInterno==EV_DRAGING_BODY)
+            {
+                _world.bodies[drag_body].inverseMass = 1 / _world.bodies[drag_body].mass;
+                eventoInterno = EV_NADA;
+            }
+            break;
+        case 2:
+            // middle button
+            // WM_MBUTTONUP
+            // termino event de pan realtime
+            eventoInterno = EV_NADA;
+            break;
+        case 3:
+            // right button
+            break;
+    }
+}
+
+
+function onMouseWheel(e) {
+
+    var delta = e.wheelDelta;
+    var xPos = mouse_x; 
+    var yPos = mouse_y; 
+    var x = (xPos-ox)/ex;
+    var y = (yPos-oy)/ey;
+    // ajusto la escala
+    var k = 1 + delta/1200.0;
+    ex*=k;
+    ey*=k;
+    // ajusto el origen
+    ox += x*ex*(1.0/k-1);
+    oy += y*ey*(1.0/k-1);
+
+}
+
+
+function LoadStaticScene(escena) {
+    init = false;
+
+    // inicializo el mundo
+    _world.Clear();
+    gravity.Set(0, 10.0 * gravityScale);
+    switch (escena) {
+
+        case 0:
+
+			// 2 triangulos de  base y uno que cae 
+			var p = _world.AddTri(0, 5, 0, 0, 40, 5);
+			p.position.Set(0, 40);
+			p.SetStatic();
+
+			p = _world.AddTri(0, 5, 40,0 ,40, 5 );
+			p.position.Set(50, 40);
+			p.SetStatic();
+
+			p = _world.AddTri(10-5,10+5,10-5,10-5, 10+5,10+2*5);
+			p.position.Set(15.46 , 34.069);
+			p.velocity.Set(9.06 , 15.48);
+			p.SetOrient( -1.248819);
+			p.angularVelocity = -2.0813;
+            break;
+
+        case 1:
+            // pendulo
+            var A = _world.AddCircle(40, 2, 1);
+            A.SetStatic();
+
+            var p = _world.AddCircle(30, 20, 5);
+            p.velocity.Set(9.06, 0);
+            p.restitution = 1;
+            _world.AddConstraint(p, A, 25);
+
+            p = _world.AddCircle(50, 20, 5);
+            p.velocity.Set(-9.06, 0);
+            p.restitution = 1;
+            _world.AddConstraint(p, A, 25);
+
+            p = _world.AddCircle(40, 20, 5);
+            p.velocity.Set(-9.06, 0);
+            p.restitution = 1;
+            _world.AddConstraint(p, A, 25);
+            break;
+
+           case 2:
+            // cadena 
+            for(var j= 0;j<5;++j)
+            {
+                var A = _world.AddCircle(10+j*15,2,1);
+                A.SetStatic();
+                for(var i= 0;i<15;++i)
+                {
+                    var p = _world.AddCircle(35-i*2+j*15,10+i*2,1);
+                    p.restitution = 1;
+                    _world.AddConstraint(p,A,3);
+                    A = p;
+                }
+            }
+            break;
+
+		case 3:
+            // triple pendulo
+            var A = _world.AddCircle(10,2,1);
+            A.SetStatic();
+            var p = _world.AddCircle(9,3,1);
+            p.restitution = 1;
+            _world.AddConstraint(p,A,4);
+            A = p;
+            p = _world.AddCircle(10,9,1);
+            p.restitution = 1;
+            _world.AddConstraint(p,A,5);
+            break;
+
+		case 4:
+            // triangulo con 2 circulos atados
+            var p = _world.AddTri(0, 30, 30, 0, 60, 30);
+            p.position.Set(50, 50);
+            p.SetStatic();
+            var A = _world.AddCircle(10,10,5);
+            A.restitution = 1;
+            var B = _world.AddCircle(60,10,5);
+            B.restitution = 1;
+            _world.AddConstraint(A,B,50);
+            break;
+		
+        case 5:
+            // pendulo fisico
+            var A = _world.AddCircle(40,2,1);
+            A.SetStatic();
+            var p = _world.AddBox(30,20,6,3);
+            p.velocity.Set(9.06 , 10);
+            p.restitution = 1;
+            var pC = _world.AddConstraint(p,A,25);
+            pC.ptA.Set(-3,-1.5);
+            break;
+
+		case 6:
+            // cuerda
+            var p = _world.AddBox(0,10,2,6);
+            p.SetStatic();
+            var cant_eslabones = 30;
+            var dx = 80.0/cant_eslabones;
+            for(var j= 0;j<cant_eslabones;++j)
+            {
+                var A = _world.AddCircle(j*dx,10,1);
+                var C = _world.AddConstraint(p,A,dx/2);
+                C.exact_distance = true;
+                p = A;
+            }
+            var B = _world.AddBox(j*dx,10,2,6);
+            B.SetStatic();
+            _world.AddConstraint(p,B,dx*1.1);
+            break;
+
+        case 7:
+            // ragdalls en habitacion
+            gravity.y = 10;
+            var Y = 10;
+            var X = 20;
+            for(var s = 0;s<10;++s)
+            {
+                RagDollBody(X,Y,1,0);
+                X+=5;
+                Y+=3;
+            }
+
+            var floor = _world.AddBox(50,50,100,1);
+            floor.SetStatic();
+
+            var wall = _world.AddBox(0,25,1,50);
+            wall.SetStatic();
+
+            wall = _world.AddBox(100,25,1,50);
+            wall.SetStatic();
+            break;
+
+		case 8:
+            // particle simulated rigid body
+            var p0 = _world.AddCircle(10,10,1);
+			var p1 = _world.AddCircle(20,10,1);
+			var p2 = _world.AddCircle(20,20,1);
+			var p3 = _world.AddCircle(10,20,1);
+				
+			var lado_0 = _world.AddJointConstraint(p0, p1);
+			var lado_1 = _world.AddJointConstraint(p1, p2);
+			var lado_2 = _world.AddJointConstraint(p2, p3);
+			var lado_3 = _world.AddJointConstraint(p3, p0);
+			var diag_0 = _world.AddJointConstraint(p0, p2);
+			var diag_1 = _world.AddJointConstraint(p1, p3);
+
+		    var floor = _world.AddBox(50,50,100,1);
+		    floor.SetStatic();
+			var wall = _world.AddBox(0,25,1,50);
+			wall.SetStatic();
+            wall = _world.AddBox(100,25,1,50);
+            wall.SetStatic();
+            break;
+
+        case 9:
+            // pila de cajas
+            var floor = _world.AddBox(50, 50, 100, 2);
+            floor.SetStatic();
+            var dx = 20;
+            var dy = 4;
+            for(var i=0;i<5;++i)
+            {
+                var p = _world.AddBox(50, 49 - dy * (i + 0.5), dx - i * 4, dy);
+            }
+            break;
+
+    }
+
+    init = true;
+
+}
+
+
+function main()
+{   
+    var p = _world.AddBox(40, 50, 80, 5);
+    p.SetStatic();
+    var p = _world.AddBox(0, 25, 2, 50);
+    p.SetStatic();
+    var p = _world.AddBox(80, 25, 2, 50);
+    p.SetStatic();
+
+    p = _world.AddBox(4,30,5,5);
+    p.velocity.Set(0, 5);
+    p.maxForce = 500;
+    init = true;
+    
+	document.addEventListener( "keydown", doKeyDown, true);
+	document.addEventListener("mousemove", onMouseMove, true);
+	document.addEventListener("mousedown", onMouseDown, true);
+	document.addEventListener("mouseup", onMouseUp, true);
+	document.addEventListener("mousewheel", onMouseWheel, true);
+
+    canvas = document.getElementById('mycanvas');
+    ctx = canvas.getContext('2d');
+    setInterval(RenderLoop, elapsed_time * 1000);
+} 
+
+
+</script>
+</head>
+<body onload="main();">
+	<canvas id="mycanvas" width="1000" height="700"></canvas>
+</body>
+</html>
+ 

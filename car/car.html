@@ -1,0 +1,279 @@
+﻿<!DOCTYPE HTML>
+<html>
+<head>
+
+<script type="text/javascript" src="../engine/math.js"></script>
+<script type="text/javascript" src="../engine/body.js"></script>
+<script type="text/javascript" src="../engine/world.js"></script>
+<script type="text/javascript" src="../engine/collision.js"></script>
+<script type="text/javascript" src="../engine/contact.js"></script>
+<script type="text/javascript" src="../engine/constraint.js"></script>
+<script type="text/javascript" src="../engine/ragdall.js"></script>
+
+<script type="text/javascript">
+
+var elapsed_time = 1/60;
+var canvas;
+var ctx;
+var	ex = 5;
+var ey = 5;
+var ox = 10;
+var oy = 10;
+
+// posicion del mouse
+var mouse_x = 0;
+var mouse_y = 0;
+
+var gravityScale = 5.0;
+var gravity = new Vector2( 4* gravityScale, 10 * gravityScale );
+var fixed_dt = 1.0/60.0;								// avance del tiempo constante
+var _world = new World();
+
+var max_time = 5;
+var timer_auto = 0;
+var mejor_auto = null;
+var auto_actual = null;
+
+var init = false;
+
+function Update() 
+{
+    _world.Update(elapsed_time);
+	
+	// cuento la distancia recorrida si esta tocando el piso (no cuenta si esta "volando")
+	var colision_suelo = false;
+	var i=0;
+	while(i<_world.m_contactCount && !colision_suelo)
+		if(_world.contacts[i].A.id==0 || _world.contacts[i].B.id==0)
+			colision_suelo = true;
+		else 
+			++i;
+
+	if(colision_suelo)
+		auto_actual[0].distancia += auto_actual[0].position.x - auto_actual[0].ant_x;
+	auto_actual[0].ant_x = auto_actual[0].position.x;
+	
+	timer_auto-=elapsed_time;
+	if(timer_auto<0)
+	{
+		// termino el tiempo de esta rueda
+		if(mejor_auto==null || auto_actual[0].distancia > mejor_auto[0].distancia)
+		{
+			mejor_auto = auto_actual;
+			// pero lo dejo como estaba al principio (antes que se rompa al andar)
+			for(var i=0;i<mejor_auto.length;++i)
+			{
+				mejor_auto[i].position = mejor_auto[i].pos_original;
+				mejor_auto[i].orient = mejor_auto[i].orient_original;
+			}
+		}
+			
+		// inicio un nuevo auto
+		// borro el ultimo auto
+		_world.m_bodyCount-=3; 
+		_world.m_constraintCount = 0;
+		// creo una nueva rueda
+		auto_actual = crearAuto()
+		// inicio otra simulacion
+		timer_auto = max_time;
+	}
+}
+
+function Render() 
+{
+    if (canvas.getContext)
+    {
+        // borro la pantalla
+        ctx.fillStyle = 'rgba(0,0,0,255)';
+        ctx.fillRect(0,0,2000,2000);
+		// dibujo la escena esquematica con el motor 
+	    _world.Render(ctx,ox,oy,ex,ey);
+		
+		// dibujo el mejor auto
+		if(mejor_auto!=null)
+		{
+			var x0 = mejor_auto[0].position.x;
+			var y0 = mejor_auto[0].position.y;
+			var pos_x = [];
+			var pos_y = [];
+			for(var i=0;i<mejor_auto.length;++i)
+			{
+				var p = mejor_auto[i];
+				var ant_x = p.position.x;
+				var ant_y = p.position.y;
+				p.position.x -= x0-80;
+				p.position.y -= y0-10;
+				p.Render();
+				pos_x[i] = p.position.x;
+				pos_y[i] = p.position.y;
+
+				p.position.x = ant_x;
+				p.position.y = ant_y;
+			}
+			ctx.strokeStyle = '#ffffff';
+			ctx.lineWidth = 2;
+			ctx.beginPath();
+			ctx.moveTo(ox + pos_x[0]*ex, oy + pos_y[0]*ey);
+			for(var i=1;i<mejor_auto.length;++i)
+				ctx.lineTo(ox + pos_x[i]*ex, oy + pos_y[i]*ey);
+			ctx.closePath();
+			ctx.stroke();
+			ctx.lineWidth = 1;
+			
+			ctx.font = "12px Arial";
+			ctx.fillStyle = 'rgba(255,255,255,255)';
+			ctx.fillText("dist:" + mejor_auto[0].distancia.toFixed(2),600,40);
+		}
+    }
+}
+
+
+function RenderLoop() 
+{
+    if (!init)
+		return;
+    
+	Update();
+	Render();
+}
+
+
+function doKeyDown(e) 
+{
+	var xPos = (mouse_x-ox)/ ex; 
+	var yPos = (mouse_y-oy)/ ey; 
+}
+
+function onMouseMove() 
+{
+	var xPos = window.event.offsetX;
+	var yPos = window.event.offsetY;
+
+    // actualizo la posicion del mouse
+	mouse_x = xPos;
+	mouse_y = yPos;
+}
+
+function onMouseDown(e) {
+    e = e || window.event;
+    switch (e.which)
+    {
+        case 1:
+            // Left button
+            break;
+        case 2:
+            // middle button
+            break;
+        case 3:
+            // right button
+            break;
+    }
+}
+
+
+function onMouseUp(e) {
+    e = e || window.event;
+    switch (e.which) {
+        case 1:
+            // Left button
+            break;
+        case 2:
+            // middle button
+            break;
+        case 3:
+            // right button
+            break;
+    }
+}
+
+function loadscene()
+{
+	// Creo un hm
+	var x = 0;
+	var dx = 5;
+	var piso_y = 60;
+	var piso_dy = 30;
+	var ant_H = piso_dy;
+	for(var i=0;i<100;++i)
+	{
+		var H = Math.random()*2 + piso_dy;
+		var v = [	new Vector2(x,piso_y) , 
+					new Vector2(x,piso_y-ant_H),
+					new Vector2(x+dx,piso_y-H),
+					new Vector2(x+dx,piso_y) ];
+		var p = _world.AddPoly(v,4);
+		p.SetStatic();
+		p.id = 0;
+		p.restitution = 0;
+		x+=dx;
+		//piso_dy -= 0.15;
+		ant_H = H;
+	}
+	
+	// Creo una rueda e inicio la animacion
+	auto_actual = crearAuto();
+	timer_auto = max_time;
+    init = true;
+
+}
+
+
+function crearAuto()
+{
+	var p = [];
+	// creo una rueda
+	p[0] = _world.AddCircle(Math.random()*5, Math.random()*3,Math.random()*4+1);
+	p[0].restitution = 0;
+	p[0].distancia=0;
+	p[0].ant_x=p[0].position.x;
+	p[0].pos_original =p[0].position.Clone();
+	p[0].orient_original =p[0].orient;
+	p[0].id = 1;
+	// creo la otra rueda
+	p[1] = _world.AddCircle(Math.random()*5+10, Math.random()*3,Math.random()*4+1);
+	p[1].restitution = 0;
+	p[1].distancia=0;
+	p[1].ant_x=p[1].position.x;
+	p[1].pos_original =p[1].position.Clone();
+	p[1].orient_original =p[1].orient;
+	p[1].id = 1;
+	// creo la carroceria
+	p[2] = _world.AddBox(Math.random()*20-5, Math.random()*5-6,10,4);
+	p[2].restitution = 0;
+	p[2].distancia=0;
+	p[2].ant_x=p[2].position.x;
+	p[2].pos_original =p[2].position.Clone();
+	p[2].orient_original =p[2].orient;
+	p[2].id = 1;
+
+	// creo el constraint
+	_world.AddDistanceConstraint(p[0],new Vector2(0,-0) , p[1],new Vector2(0,0));
+	_world.AddDistanceConstraint(p[0],new Vector2(0,-0) , p[2],new Vector2(0,0));
+	_world.AddDistanceConstraint(p[1],new Vector2(0,-0) , p[2],new Vector2(0,0));
+	
+	return p;
+}
+
+function main()
+{   
+	document.addEventListener( "keydown", doKeyDown, true);
+	document.addEventListener("mousemove", onMouseMove, true);
+	document.addEventListener("mousedown", onMouseDown, true);
+	document.addEventListener("mouseup", onMouseUp, true);
+
+    canvas = document.getElementById('mycanvas');
+    ctx = canvas.getContext('2d');
+	
+	loadscene();
+	
+    setInterval(RenderLoop, elapsed_time * 1000);
+} 
+
+
+</script>
+</head>
+<body onload="main();">
+	<canvas id="mycanvas" width="1000" height="700"></canvas>
+</body>
+</html>
+ 
